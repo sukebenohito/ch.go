@@ -27,7 +27,7 @@ func main(){
 	ch := Chatango()
 
 //	example
-//	ch.EasyStart([]string{"nico-nico"}, "BotName", "Password")
+//	ch.EasyStart([]string{"nico-nico", "monosekai", "desertofdead"}, "BotName", "")
 	ch.EasyStart([]string{"nico-nico"}, "BotName", "")
 
 }
