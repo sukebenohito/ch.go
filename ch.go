@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"regexp"
 	"github.com/gorilla/websocket"
+	"reflect"
 )
 
 var tsweights = [][]interface{}{
@@ -224,6 +225,7 @@ type _Room struct {
 	Host string
 	Channel string
 	FirstCommand bool
+	Connected bool
 	Ws *websocket.Conn
 	Mgr *_Chatango
 }
@@ -274,8 +276,8 @@ func(r *_Room) Connect(){
 	//log.Printf("connecting to %s", r.Host)
 	header := http.Header{}
 	header.Add("Origin", "https://st.chatango.com")
-	r.Mgr.Connect(r)
-
+	r.Mgr.Event("Connect", []reflect.Value{reflect.ValueOf(r)})
+	r.Connected = true
 	ws, _, err := websocket.DefaultDialer.Dial(u.String(), header)
 	r.Ws = ws
 	if err != nil {
@@ -288,7 +290,9 @@ func(r *_Room) Connect(){
 	for {
 		_, message, err := r.Ws.ReadMessage()
 		if err != nil {
-			r.Mgr.Disconnect(r, err)
+			r.Mgr.Event("Disconnect", []reflect.Value{reflect.ValueOf(r), reflect.ValueOf(err)})
+			r.Connected  = false
+			//r.Mgr.Disconnect(r, err)
 			return
 		}
 		r.Feed(string(message))
@@ -333,7 +337,7 @@ func (r *_Room) _rcmd_b(args []string){
 
 	msg := Message(user, _msg, time, puid, ip, channel)
 
-	r.Mgr.Message(user, r , msg)
+	r.Mgr.Event("Message", []reflect.Value{reflect.ValueOf(user), reflect.ValueOf(r) , reflect.ValueOf(msg)})
 }
 
 func (r _Room) Feed(food string) {
@@ -358,6 +362,18 @@ type _Chatango struct{
 	Running bool
 }
 
+func (c *_Chatango) Event(cmd string, args []reflect.Value) {
+
+	v := reflect.ValueOf(c)
+	method := v.MethodByName(cmd)
+	if method.IsValid() {
+		method.Call(args)
+	} else {
+		fmt.Println("Method not found")
+	}
+}
+
+
 func Chatango() *_Chatango{
 	return &_Chatango{
 		Running: true,
@@ -377,11 +393,22 @@ func (c *_Chatango) EasyStart(rooms []string, username string, password string) 
 	interval := time.Second * 10
 	ticker := time.NewTicker(interval)
 	tickerChannel := ticker.C
+
 	for c.Running {
 		<-tickerChannel
+
+		var activeRooms []string
+
 		// Perform the ping task
 		for _, room := range c.RoomList {
-			room.Ping()
+			if room.Connected == true{
+				room.Ping()
+				activeRooms = append(activeRooms, room.Name)
+			}
+		}
+		if len(activeRooms) == 0 {
+			log.Println("No active rooms left, stopping the ping loop.")
+			c.Running = false
 		}
 	}
 }
