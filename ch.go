@@ -14,10 +14,14 @@ import (
 	"strconv"
 	"regexp"
 	"github.com/gorilla/websocket"
-	"reflect"
 )
 
-var tsweights = [][]interface{}{
+type ServerWeight struct {
+	ID     string
+	Weight int
+}
+
+var tsweights = []ServerWeight{
 	{"5", 75}, {"6", 75}, {"7", 75}, {"8", 75}, {"16", 75}, {"17", 75}, {"18", 75},
 	{"9", 95}, {"11", 95}, {"12", 95}, {"13", 95}, {"14", 95}, {"15", 95}, {"19", 110},
 	{"23", 110}, {"24", 110}, {"25", 110}, {"26", 110}, {"28", 104}, {"29", 104},
@@ -31,23 +35,27 @@ var tsweights = [][]interface{}{
 	{"79", 116}, {"80", 116}, {"81", 116}, {"82", 116}, {"83", 116}, {"84", 116},
 }
 
+var totalWeight = 7034
 
 func _getServer(group string) string {
-
 	group = strings.ReplaceAll(group, "_", "q")
 	group = strings.ReplaceAll(group, "-", "q")
+	end := len(group)
+	if end > 5 {
+		end = 5
+	}
+	fnv, _ := strconv.ParseInt(group[:end], 36, 64)
 
-	fnv, _ := strconv.ParseInt(group[:int(math.Min(float64(len(group)), 5))], 36, 64)
-
-	safeSliceString := func (s string, start, end int) string {
-		if start < 0 || start >= len(s) || end < 0 || end > len(s) {
-			return ""
-		}
-		return s[start:end]
+	if len(group) <= 6 {
+		return ""
+	}
+	start := 6
+	end = start + 3
+	if end > len(group) {
+		end = len(group)
 	}
 
-	lnvStr := safeSliceString(group, 6, 6+int(math.Min(float64(len(group)-5), 3)))
-
+	lnvStr := group[start:end]
 
 	var lnv int64
 	if lnvStr != "" {
@@ -60,25 +68,21 @@ func _getServer(group string) string {
 	}
 
 	num := float64(fnv%lnv) / float64(lnv)
-	tnum := make([]int, len(tsweights))
-	for i, weight := range tsweights {
-		tnum[i] = weight[1].(int)
-	}
-	maxnum := 0
-	for _, value := range tnum {
-		maxnum += value
-	}
+
+	//totalWeight := 0
+	//for _, sw := range tsweights {
+	//	totalWeight += sw.Weight
+	//}
 
 	cumfreq := 0.0
-
-	for _, weight := range tsweights {
-		cumfreq += float64(weight[1].(int)) / float64(maxnum)
+	for _, sw := range tsweights {
+		cumfreq += float64(sw.Weight) / float64(totalWeight)
 		if num <= cumfreq {
-			return fmt.Sprintf("s%s.chatango.com", weight[0])
+			return fmt.Sprintf("s%s.chatango.com", sw.ID)
 		}
 	}
-	errMessage := fmt.Sprintf("Couldn't find host server for room %s", group)
-	panic(errMessage)
+
+	panic(fmt.Sprintf("Couldn't find host server for room %s", group))
 }
 
 func _getAnonID(n string, ssid string) string {
@@ -276,7 +280,7 @@ func(r *_Room) Connect(){
 	//log.Printf("connecting to %s", r.Host)
 	header := http.Header{}
 	header.Add("Origin", "https://st.chatango.com")
-	r.Mgr.Event("Connect", []reflect.Value{reflect.ValueOf(r)})
+	r.Mgr.Connect(r)
 	r.Connected = true
 	ws, _, err := websocket.DefaultDialer.Dial(u.String(), header)
 	r.Ws = ws
@@ -290,9 +294,8 @@ func(r *_Room) Connect(){
 	for {
 		_, message, err := r.Ws.ReadMessage()
 		if err != nil {
-			r.Mgr.Event("Disconnect", []reflect.Value{reflect.ValueOf(r), reflect.ValueOf(err)})
 			r.Connected  = false
-			//r.Mgr.Disconnect(r, err)
+			r.Mgr.Disconnect(r, err)
 			return
 		}
 		r.Feed(string(message))
@@ -311,7 +314,7 @@ func (r *_Room) Disconnect(){
 	r.Ws.Close()
 }
 
-func (r *_Room) _rcmd_b(args []string){
+func (r *_Room) Rcmd_b(args []string){
 	time := args[0];
 	name := args[1];
 	puid := args[3];
@@ -337,17 +340,17 @@ func (r *_Room) _rcmd_b(args []string){
 
 	msg := Message(user, _msg, time, puid, ip, channel)
 
-	r.Mgr.Event("Message", []reflect.Value{reflect.ValueOf(user), reflect.ValueOf(r) , reflect.ValueOf(msg)})
+	r.Mgr.Message(user, r, msg)
 }
 
 func (r _Room) Feed(food string) {
 	parts := strings.Split(food, ":")
-	cmd := "_rcmd_" + parts[0]
+	cmd := "Rcmd_" + parts[0]
 	args := parts[1:]
 
 	switch cmd {
-		case "_rcmd_b":
-			r._rcmd_b(args)
+		case "Rcmd_b":
+			r.Rcmd_b(args)
 		default :
 			//fmt.Printf("%s: %s \n", cmd, args)
 	}
@@ -360,17 +363,6 @@ type _Chatango struct{
 	User *_User
 	RoomList map[string]*_Room
 	Running bool
-}
-
-func (c *_Chatango) Event(cmd string, args []reflect.Value) {
-
-	v := reflect.ValueOf(c)
-	method := v.MethodByName(cmd)
-	if method.IsValid() {
-		method.Call(args)
-	} else {
-		fmt.Println("Method not found")
-	}
 }
 
 
