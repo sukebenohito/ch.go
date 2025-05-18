@@ -173,7 +173,7 @@ func _genUid() string {
 
 
 //User Class
-type _User struct{
+type User struct{
 	Name string
 	NameColor string;
 	FontFace string;
@@ -181,16 +181,16 @@ type _User struct{
 	FontColor string;
 }
 
-var users = make(map[string]*_User)
+var users = make(map[string]*User)
 
-func User(name string) *_User {
+func NewUser(name string) *User {
 	lowerName := strings.ToLower(name)
 
 	if user, exists := users[lowerName]; exists {
 		return user
 	}
 
-	user := &_User{
+	user := &User{
 		Name: name,
 	}
 	users[lowerName] = user
@@ -200,8 +200,8 @@ func User(name string) *_User {
 
 
 //Message classs
-type _Message struct{
-	User *_User
+type Message struct{
+	User *User
 	Time string
 	Puid string
 	Body string
@@ -209,8 +209,8 @@ type _Message struct{
 	Channel string
 }
 
-func Message(user *_User, body string, time string, puid string, ip string, channel string) *_Message {
-	return &_Message{
+func NewMessage(user *User, body string, time string, puid string, ip string, channel string) *Message {
+	return &Message{
 		User: user,
 		Body: body,
 		Time: time,
@@ -221,7 +221,7 @@ func Message(user *_User, body string, time string, puid string, ip string, chan
 }
 
 //Room classs
-type _Room struct {
+type Room struct {
 	Name string
 	Uid string
 	Server string
@@ -231,11 +231,11 @@ type _Room struct {
 	FirstCommand bool
 	Connected bool
 	Ws *websocket.Conn
-	Mgr *_Chatango
+	Mgr *Chatango
 }
 
-func Room(name string, c *_Chatango) *_Room {
-	return &_Room{
+func NewRoom(name string, c *Chatango) *Room {
+	return &Room{
 		Mgr: c,
 		Name: name,
 		Uid: _genUid(),
@@ -245,7 +245,7 @@ func Room(name string, c *_Chatango) *_Room {
 	}
 }
 
-func (r *_Room) SendCommand(args ...string) {
+func (r *Room) SendCommand(args ...string) {
 	terminator := ""
 	if r.FirstCommand {
 		terminator = "\x00"
@@ -263,7 +263,7 @@ func (r *_Room) SendCommand(args ...string) {
 	}
 }
 
-func (r *_Room) Auth(){
+func (r *Room) Auth(){
 	if r.Mgr.UserName != "" && r.Mgr.Password != "" {
 		r.SendCommand("bauth", r.Name, r.Uid, r.Mgr.UserName, r.Mgr.Password)
 	} else if r.Mgr.UserName != "" {
@@ -274,7 +274,7 @@ func (r *_Room) Auth(){
 	}
 }
 
-func(r *_Room) Connect(){
+func(r *Room) Connect(){
 	r.Host = r.Server + ":" + r.Port
 	u := url.URL{Scheme: "wss", Host: r.Host, Path: "/"}
 	//log.Printf("connecting to %s", r.Host)
@@ -302,19 +302,19 @@ func(r *_Room) Connect(){
 	}
 }
 
-func (r *_Room) Message(msg string){
+func (r *Room) Message(msg string){
 	r.SendCommand("bm", "t12r", r.Channel, msg )
 }
 
-func (r *_Room) Ping(){
+func (r *Room) Ping(){
 	r.SendCommand("")
 }
 
-func (r *_Room) Disconnect(){
+func (r *Room) Disconnect(){
 	r.Ws.Close()
 }
 
-func (r *_Room) Rcmd_b(args []string){
+func (r *Room) Rcmd_b(args []string){
 	time := args[0];
 	name := args[1];
 	puid := args[3];
@@ -328,7 +328,7 @@ func (r *_Room) Rcmd_b(args []string){
 		}
 	}
 
-	user := User(name)
+	user := NewUser(name)
 	ip := args[6]
 	channel := args[7]
 	r.Channel = channel
@@ -338,12 +338,12 @@ func (r *_Room) Rcmd_b(args []string){
 	user.FontSize = size
 	user.FontColor = color
 
-	msg := Message(user, _msg, time, puid, ip, channel)
+	msg := NewMessage(user, _msg, time, puid, ip, channel)
 
 	r.Mgr.Message(user, r, msg)
 }
 
-func (r _Room) Feed(food string) {
+func (r Room) Feed(food string) {
 	parts := strings.Split(food, ":")
 	cmd := "Rcmd_" + parts[0]
 	args := parts[1:]
@@ -357,49 +357,59 @@ func (r _Room) Feed(food string) {
 }
 
 
-type _Chatango struct{
+type Chatango struct{
 	UserName string
 	Password string
-	User *_User
-	RoomList map[string]*_Room
+	PrivateMessage *PrivateMessage
+	User *User
+	RoomList map[string]*Room
 	Running bool
 }
 
 
-func Chatango() *_Chatango{
-	return &_Chatango{
+func NewChatango() *Chatango{
+	return &Chatango{
 		Running: true,
 	}
 }
 
-func (c *_Chatango) EasyStart(rooms []string, username string, password string) {
+func (c *Chatango) EasyStart(rooms []string, username string, password string) {
 	c.UserName = username
 	c.Password = password
-	c.RoomList = make(map[string]*_Room)
-	c.User = User(username)
+	c.RoomList = make(map[string]*Room)
+	c.User = NewUser(username)
 	for _, roomName := range rooms {
-		c.RoomList[roomName] = Room(roomName, c)
+		c.RoomList[roomName] = NewRoom(roomName, c)
 		go c.RoomList[roomName].Connect()
+	}
+
+	if c.UserName != "" && c.Password != ""{
+		c.PrivateMessage = NewPrivateMessage(c)
+		go c.PrivateMessage.Connect()
 	}
 
 	interval := time.Second * 10
 	ticker := time.NewTicker(interval)
 	tickerChannel := ticker.C
-
 	for c.Running {
 		<-tickerChannel
 
-		var activeRooms []string
+		var activeConnections []string
 
 		// Perform the ping task
 		for _, room := range c.RoomList {
 			if room.Connected == true{
 				room.Ping()
-				activeRooms = append(activeRooms, room.Name)
+				activeConnections = append(activeConnections, room.Name)
 			}
 		}
-		if len(activeRooms) == 0 {
-			log.Println("No active rooms left, stopping the ping loop.")
+		if c.PrivateMessage.Connected == true{
+			c.PrivateMessage.Ping()
+			activeConnections = append(activeConnections, c.PrivateMessage.Name)
+		}
+
+		if len(activeConnections) == 0 {
+			log.Println("No active connections left, stopping the ping loop.")
 			c.Running = false
 		}
 	}
