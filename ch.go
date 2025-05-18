@@ -280,8 +280,6 @@ func(r *Room) Connect(){
 	//log.Printf("connecting to %s", r.Host)
 	header := http.Header{}
 	header.Add("Origin", "https://st.chatango.com")
-	r.Mgr.Connect(r)
-	r.Connected = true
 	ws, _, err := websocket.DefaultDialer.Dial(u.String(), header)
 	r.Ws = ws
 	if err != nil {
@@ -289,13 +287,16 @@ func(r *Room) Connect(){
 	}
 	defer r.Ws.Close()
 
+	r.Mgr.GroupConnect(r)
+	r.Connected = true
+
 	r.Auth()
 
 	for {
 		_, message, err := r.Ws.ReadMessage()
 		if err != nil {
 			r.Connected  = false
-			r.Mgr.Disconnect(r, err)
+			r.Mgr.GroupDisconnect(r, err)
 			return
 		}
 		r.Feed(string(message))
@@ -340,7 +341,7 @@ func (r *Room) Rcmd_b(args []string){
 
 	msg := NewMessage(user, _msg, time, puid, ip, channel)
 
-	r.Mgr.Message(user, r, msg)
+	r.Mgr.GroupMessage(user, r, msg)
 }
 
 func (r Room) Feed(food string) {
@@ -356,7 +357,6 @@ func (r Room) Feed(food string) {
 	}
 }
 
-
 type Chatango struct{
 	UserName string
 	Password string
@@ -364,12 +364,29 @@ type Chatango struct{
 	User *User
 	RoomList map[string]*Room
 	Running bool
+	EnablePM bool
+	PMessage func (user *User, private *PrivateMessage, message string)
+	GroupMessage func (user *User, room *Room, message *Message)
+	GroupConnect func (room *Room)
+	GroupDisconnect func (room *Room, err error)
 }
 
 
 func NewChatango() *Chatango{
 	return &Chatango{
 		Running: true,
+		GroupMessage: func (user *User, room *Room, message *Message) {
+			fmt.Printf("%s %s %s\n", room.Name, user.Name, message.Body)
+		},
+		PMessage:func (user *User, private *PrivateMessage, message string) {
+			fmt.Printf("%s %s %s\n", private.Name, user.Name, message)
+		},
+		GroupConnect: func (room *Room){
+			fmt.Printf("connected to %s\n", room.Name)
+		},
+		GroupDisconnect: func (room *Room, err error) {
+			fmt.Printf("disconnected from %s %s\n", room.Name, err)
+		},
 	}
 }
 
@@ -378,7 +395,7 @@ func (c *Chatango) EasyStart(rooms []string, username string, password string) {
 	c.Password = password
 	c.RoomList = make(map[string]*Room)
 	c.User = NewUser(username)
-	enablePM := false
+	c.EnablePM = false
 	for _, roomName := range rooms {
 		c.RoomList[roomName] = NewRoom(roomName, c)
 		go c.RoomList[roomName].Connect()
@@ -387,7 +404,7 @@ func (c *Chatango) EasyStart(rooms []string, username string, password string) {
 	if c.UserName != "" && c.Password != "" {
 		c.PrivateMessage = NewPrivateMessage(c)
 		go c.PrivateMessage.Connect()
-		enablePM = true
+		c.EnablePM = true
 	}
 
 	interval := time.Second * 10
@@ -405,7 +422,7 @@ func (c *Chatango) EasyStart(rooms []string, username string, password string) {
 				activeConnections = append(activeConnections, room.Name)
 			}
 		}
-		if enablePM == true {
+		if c.EnablePM == true {
 			if c.PrivateMessage.Connected == true{
 				c.PrivateMessage.Ping()
 				activeConnections = append(activeConnections, c.PrivateMessage.Name)
@@ -418,3 +435,4 @@ func (c *Chatango) EasyStart(rooms []string, username string, password string) {
 		}
 	}
 }
+
