@@ -378,14 +378,16 @@ func (c *Chatango) EasyStart(rooms []string, username string, password string) {
 	c.Password = password
 	c.RoomList = make(map[string]*Room)
 	c.User = NewUser(username)
+	enablePM := false
 	for _, roomName := range rooms {
 		c.RoomList[roomName] = NewRoom(roomName, c)
 		go c.RoomList[roomName].Connect()
 	}
 
-	if c.UserName != "" && c.Password != ""{
+	if c.UserName != "" && c.Password != "" {
 		c.PrivateMessage = NewPrivateMessage(c)
 		go c.PrivateMessage.Connect()
+		enablePM = true
 	}
 
 	interval := time.Second * 10
@@ -403,9 +405,11 @@ func (c *Chatango) EasyStart(rooms []string, username string, password string) {
 				activeConnections = append(activeConnections, room.Name)
 			}
 		}
-		if c.PrivateMessage.Connected == true{
-			c.PrivateMessage.Ping()
-			activeConnections = append(activeConnections, c.PrivateMessage.Name)
+		if enablePM == true {
+			if c.PrivateMessage.Connected == true{
+				c.PrivateMessage.Ping()
+				activeConnections = append(activeConnections, c.PrivateMessage.Name)
+			}
 		}
 
 		if len(activeConnections) == 0 {
