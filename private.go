@@ -104,7 +104,6 @@ func(p *PrivateMessage) Connect(){
 	u := url.URL{Scheme: "ws", Host: p.Host, Path: "/"}
 	header := http.Header{}
 	header.Add("Origin", "https://st.chatango.com")
-	//p.Mgr.Connect(p)
 	p.Connected = true
 	log.Printf("connecting to %s", p.Host)
 	ws, _, err := websocket.DefaultDialer.Dial(u.String(), header)
@@ -121,7 +120,6 @@ func(p *PrivateMessage) Connect(){
 		if err != nil {
 			p.Connected  = false
 			log.Printf("%s: %s \n", p.Name, err)
-			//p.Mgr.Disconnect(p, err)
 			return
 		}
 		p.Feed(string(message))
@@ -160,4 +158,3 @@ func (p *PrivateMessage) Rcmd_msg(args []string){
 	text := _strip_html(args[5])
 	p.Mgr.PMessage(user, p, text)
 }
-
