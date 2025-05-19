@@ -105,7 +105,7 @@ func(p *PrivateMessage) Connect(){
 	header := http.Header{}
 	header.Add("Origin", "https://st.chatango.com")
 	p.Connected = true
-	log.Printf("connecting to %s", p.Host)
+	log.Println("connecting to %s", p.Host)
 	ws, _, err := websocket.DefaultDialer.Dial(u.String(), header)
 	p.Ws = ws
 	if err != nil {
@@ -119,7 +119,7 @@ func(p *PrivateMessage) Connect(){
 		_, message, err := p.Ws.ReadMessage()
 		if err != nil {
 			p.Connected  = false
-			log.Printf("%s: %s \n", p.Name, err)
+			log.Println("%s: %s", p.Name, err)
 			return
 		}
 		p.Feed(string(message))
@@ -143,12 +143,11 @@ func (p *PrivateMessage) Feed(food string) {
 	parts := strings.Split(food, ":")
 	cmd := "Rcmd_" + parts[0]
 	args := parts[1:]
-	//log.Printf("%s: %s", cmd, args)
 	switch cmd {
 		case "Rcmd_msg":
 			p.Rcmd_msg(args)
 		default :
-			//fmt.Printf("%s: %s \n", cmd, args)
+			//log.Println("%s: %s", cmd, args)
 	}
 }
 
