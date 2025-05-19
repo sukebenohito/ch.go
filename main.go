@@ -1,6 +1,5 @@
 package main
 
-
 import "fmt"
 
 func GroupMessage(user *User, room *Room, message *Message) {
