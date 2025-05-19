@@ -376,16 +376,16 @@ func NewChatango() *Chatango{
 	return &Chatango{
 		Running: true,
 		GroupMessage: func (user *User, room *Room, message *Message) {
-			fmt.Printf("%s %s %s\n", room.Name, user.Name, message.Body)
+			log.Println("%s %s %s", room.Name, user.Name, message.Body)
 		},
 		PMessage:func (user *User, private *PrivateMessage, message string) {
-			fmt.Printf("%s %s %s\n", private.Name, user.Name, message)
+			log.Println("%s %s %s", private.Name, user.Name, message)
 		},
 		GroupConnect: func (room *Room){
-			fmt.Printf("connected to %s\n", room.Name)
+			log.Println("connected to %s", room.Name)
 		},
 		GroupDisconnect: func (room *Room, err error) {
-			fmt.Printf("disconnected from %s %s\n", room.Name, err)
+			log.Println("disconnected from %s %s", room.Name, err)
 		},
 	}
 }
