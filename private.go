@@ -7,6 +7,7 @@ import (
 	"net/url"
 	//"regexp"
 	"strings"
+	"time"
 	"github.com/gorilla/websocket"
 )
 
@@ -100,29 +101,45 @@ func (p *PrivateMessage) Auth() {
 
 
 func(p *PrivateMessage) Connect(){
-	p.Host = p.Server + ":" + p.Port
-	u := url.URL{Scheme: "ws", Host: p.Host, Path: "/"}
-	header := http.Header{}
-	header.Add("Origin", "https://st.chatango.com")
-	p.Connected = true
-	log.Println("connecting to %s", p.Host)
-	ws, _, err := websocket.DefaultDialer.Dial(u.String(), header)
-	p.Ws = ws
-	if err != nil {
-		log.Fatal("dial:", err)
-	}
-	defer p.Ws.Close()
-
-	p.Auth()
-
 	for {
-		_, message, err := p.Ws.ReadMessage()
+		p.Host = p.Server + ":" + p.Port
+		u := url.URL{Scheme: "ws", Host: p.Host, Path: "/"}
+		log.Println("Connecting to", p.Host)
+		header := http.Header{}
+		header.Add("Origin", "https://st.chatango.com")
+		ws, _, err := websocket.DefaultDialer.Dial(u.String(), header)
 		if err != nil {
-			p.Connected  = false
-			log.Println("%s: %s", p.Name, err)
-			return
+			log.Println("Dial error:", err)
+			time.Sleep(5 * time.Second)
+			continue // <-- Retry connection on dial error
 		}
-		p.Feed(string(message))
+
+		p.Ws = ws
+		p.Connected = true
+		p.Auth()
+
+
+		for {
+			_, message, err := p.Ws.ReadMessage()
+			if err != nil {
+				p.Connected = false
+
+				if closeErr, ok := err.(*websocket.CloseError); ok {
+					if closeErr.Code == websocket.CloseAbnormalClosure { // code 1006
+						log.Println("Code 1006: Reconnecting...")
+						break
+					}
+				}
+
+				p.Ws.Close()
+				return // <-- Exit if not code 1006
+			}
+
+			p.Feed(string(message))
+		}
+
+		log.Println("Reconnecting in 5 seconds...")
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -147,7 +164,7 @@ func (p *PrivateMessage) Feed(food string) {
 		case "Rcmd_msg":
 			p.Rcmd_msg(args)
 		default :
-			//log.Println("%s: %s", cmd, args)
+			//log.Println(cmd, args)
 	}
 }
 
