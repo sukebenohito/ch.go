@@ -10,6 +10,15 @@ func GroupMessage(user *User, room *Room, message *Message) {
 	if message.Body == "out aja" {
 		room.Disconnect()
 	}
+	if message.Body == "join" {
+		room.Mgr.JoinRoom("monosekai")
+	}
+	if message.Body == "leave" {
+		room.Mgr.LeaveRoom("monosekai")
+	}
+	if message.Body == "stop" {
+		room.Mgr.Stop()
+	}
 
 }
 
@@ -31,7 +40,7 @@ func main(){
 	//GroupConnect, GroupDisconnect
 	//	example
 	//	ch.EasyStart([]string{"nico-nico", "monosekai", "desertofdead"}, "Name", "Password")
-	ch.EasyStart([]string{"nico-nico"}, "devilsona", "")
+	ch.EasyStart([]string{"nico-nico"}, "devilsona", "sexybamboe")
 
 
 }
