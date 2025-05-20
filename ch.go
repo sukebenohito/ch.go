@@ -274,32 +274,48 @@ func (r *Room) Auth(){
 	}
 }
 
+
 func(r *Room) Connect(){
-	r.Host = r.Server + ":" + r.Port
-	u := url.URL{Scheme: "wss", Host: r.Host, Path: "/"}
-	//log.Printf("connecting to %s", r.Host)
-	header := http.Header{}
-	header.Add("Origin", "https://st.chatango.com")
-	ws, _, err := websocket.DefaultDialer.Dial(u.String(), header)
-	r.Ws = ws
-	if err != nil {
-		log.Fatal("dial:", err)
-	}
-	defer r.Ws.Close()
-
-	r.Mgr.GroupConnect(r)
-	r.Connected = true
-
-	r.Auth()
-
 	for {
-		_, message, err := r.Ws.ReadMessage()
+		r.Host = r.Server + ":" + r.Port
+		u := url.URL{Scheme: "wss", Host: r.Host, Path: "/"}
+		log.Println("Connecting to", r.Host)
+		header := http.Header{}
+		header.Add("Origin", "https://st.chatango.com")
+		ws, _, err := websocket.DefaultDialer.Dial(u.String(), header)
 		if err != nil {
-			r.Connected  = false
-			r.Mgr.GroupDisconnect(r, err)
-			return
+			log.Println("Dial error:", err)
+			time.Sleep(5 * time.Second)
+			continue // <-- Retry connection on dial error
 		}
-		r.Feed(string(message))
+
+		r.Mgr.GroupConnect(r)
+		r.Ws = ws
+		r.Connected = true
+		r.Auth()
+
+
+		for {
+			_, message, err := r.Ws.ReadMessage()
+			if err != nil {
+				r.Connected = false
+
+				if closeErr, ok := err.(*websocket.CloseError); ok {
+					if closeErr.Code == websocket.CloseAbnormalClosure { // code 1006
+						log.Println("Code 1006: Reconnecting...")
+						break
+					}
+				}
+
+				r.Ws.Close()
+				return // <-- Exit if not code 1006
+			}
+
+			r.Feed(string(message))
+		}
+
+		log.Println("Reconnecting in 5 seconds...")
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -376,18 +392,35 @@ func NewChatango() *Chatango{
 	return &Chatango{
 		Running: true,
 		GroupMessage: func (user *User, room *Room, message *Message) {
-			log.Println("%s %s %s", room.Name, user.Name, message.Body)
+			log.Println(room.Name, user.Name, message.Body)
 		},
 		PMessage:func (user *User, private *PrivateMessage, message string) {
-			log.Println("%s %s %s", private.Name, user.Name, message)
+			log.Println(private.Name, user.Name, message)
 		},
 		GroupConnect: func (room *Room){
-			log.Println("connected to %s", room.Name)
+			log.Println("connected to ", room.Name)
 		},
 		GroupDisconnect: func (room *Room, err error) {
-			log.Println("disconnected from %s %s", room.Name, err)
+			log.Println("disconnected from ", room.Name, err)
 		},
 	}
+}
+
+func (c *Chatango) JoinRoom(roomName string) {
+	c.RoomList[roomName] = NewRoom(roomName, c)
+	go c.RoomList[roomName].Connect()
+}
+
+func (c *Chatango) LeaveRoom(roomName string) {
+	_, exists := c.RoomList[roomName]
+	if exists {
+		c.RoomList[roomName].Disconnect()
+	}
+
+}
+
+func (c *Chatango) Stop() {
+	c.Running = false
 }
 
 func (c *Chatango) EasyStart(rooms []string, username string, password string) {
@@ -434,5 +467,8 @@ func (c *Chatango) EasyStart(rooms []string, username string, password string) {
 			c.Running = false
 		}
 	}
+
+	return
+
 }
 
