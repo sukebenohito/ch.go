@@ -40,7 +40,7 @@ func main(){
 	//GroupConnect, GroupDisconnect
 	//	example
 	//	ch.EasyStart([]string{"nico-nico", "monosekai", "desertofdead"}, "Name", "Password")
-	ch.EasyStart([]string{"nico-nico"}, "devilsona", "sexybamboe")
+	ch.EasyStart([]string{"nico-nico"}, "devilsona", "")
 
 
 }
