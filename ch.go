@@ -5,15 +5,12 @@ package main
 import (
 	"fmt"
 	"log"
-	"net/http"
-	"net/url"
 	"math"
 	"math/rand"
 	"time"
 	"strings"
 	"strconv"
 	"regexp"
-	"github.com/gorilla/websocket"
 )
 
 type ServerWeight struct {
@@ -86,18 +83,38 @@ func _getServer(group string) string {
 }
 
 func _getAnonID(n string, ssid string) string {
-	if n == "" || ssid == "" {
-		return ""
+	// Default n if empty
+	if n == "" {
+		n = "5504"
 	}
-	id := ""
-	for i := 0; i < 4; i++ {
-		a, _ := strconv.Atoi(n[i:i+1])
-		b, _ := strconv.Atoi(ssid[i+4 : i+5])
-		sum := a + b
-		id += strconv.Itoa(sum % 10)
+
+	// If ssid is too short to slice from index 4, return "NNNN"
+	if len(ssid) < 5 {
+		return "NNNN"
 	}
-	return id
+
+	result := ""
+	for i := 0; i < len(n) && i < len(ssid)-4; i++ {
+		a := n[i]
+		b := ssid[i+4]
+
+		digitA, errA := strconv.Atoi(string(a))
+		digitB, errB := strconv.Atoi(string(b))
+
+		if errA != nil || errB != nil {
+			return "NNNN"
+		}
+
+		sum := digitA + digitB
+		sumStr := strconv.Itoa(sum)
+		lastDigit := sumStr[len(sumStr)-1:]
+
+		result += lastDigit
+	}
+
+	return result
 }
+
 
 func _strip_html(msg string) string {
 	htmlRegex := regexp.MustCompile(`<\/?[^>]*>`)
@@ -220,159 +237,6 @@ func NewMessage(user *User, body string, time string, puid string, ip string, ch
 	}
 }
 
-//Room classs
-type Room struct {
-	Name string
-	Uid string
-	Server string
-	Port string
-	Host string
-	Channel string
-	FirstCommand bool
-	Connected bool
-	Ws *websocket.Conn
-	Mgr *Chatango
-}
-
-func NewRoom(name string, c *Chatango) *Room {
-	return &Room{
-		Mgr: c,
-		Name: name,
-		Uid: _genUid(),
-		FirstCommand: true,
-		Server: _getServer(name),
-		Port: "8081",
-	}
-}
-
-func (r *Room) SendCommand(args ...string) {
-	terminator := ""
-	if r.FirstCommand {
-		terminator = "\x00"
-		r.FirstCommand = false
-	} else {
-		terminator = "\r\n\x00"
-	}
-
-	command := strings.Join(args, ":") + terminator
-
-	err := r.Ws.WriteMessage(websocket.TextMessage, []byte(command))
-	if err != nil {
-		log.Println("err write:", err)
-		return
-	}
-}
-
-func (r *Room) Auth(){
-	if r.Mgr.UserName != "" && r.Mgr.Password != "" {
-		r.SendCommand("bauth", r.Name, r.Uid, r.Mgr.UserName, r.Mgr.Password)
-	} else if r.Mgr.UserName != "" {
-		r.SendCommand("bauth", r.Name, r.Uid)
-		r.SendCommand("blogin", r.Mgr.UserName)
-	} else {
-		r.SendCommand("bauth", r.Name, r.Uid)
-	}
-}
-
-
-func(r *Room) Connect(){
-	for {
-		r.Host = r.Server + ":" + r.Port
-		u := url.URL{Scheme: "wss", Host: r.Host, Path: "/"}
-		log.Println("Connecting to", r.Host)
-		header := http.Header{}
-		header.Add("Origin", "https://st.chatango.com")
-		ws, _, err := websocket.DefaultDialer.Dial(u.String(), header)
-		if err != nil {
-			log.Println("Dial error:", err)
-			time.Sleep(5 * time.Second)
-			continue // <-- Retry connection on dial error
-		}
-
-		r.Mgr.GroupConnect(r)
-		r.Ws = ws
-		r.Connected = true
-		r.Auth()
-
-
-		for {
-			_, message, err := r.Ws.ReadMessage()
-			if err != nil {
-				r.Connected = false
-
-				if closeErr, ok := err.(*websocket.CloseError); ok {
-					if closeErr.Code == websocket.CloseAbnormalClosure { // code 1006
-						log.Println("Code 1006: Reconnecting...")
-						break
-					}
-				}
-
-				r.Ws.Close()
-				return // <-- Exit if not code 1006
-			}
-
-			r.Feed(string(message))
-		}
-
-		log.Println("Reconnecting in 5 seconds...")
-		time.Sleep(5 * time.Second)
-	}
-}
-
-func (r *Room) Message(msg string){
-	r.SendCommand("bm", "t12r", r.Channel, msg )
-}
-
-func (r *Room) Ping(){
-	r.SendCommand("")
-}
-
-func (r *Room) Disconnect(){
-	r.Ws.Close()
-}
-
-func (r *Room) Rcmd_b(args []string){
-	time := args[0];
-	name := args[1];
-	puid := args[3];
-	_msg, n, f := _clean_message(strings.Join(args[9:], ":"))
-	color, face, size := _parseFont(f)
-
-	if name == "" {
-		name = "#" + args[2]
-		if name == "#" {
-			name = "!anon" + _getAnonID(n, args[3])
-		}
-	}
-
-	user := NewUser(name)
-	ip := args[6]
-	channel := args[7]
-	r.Channel = channel
-
-	user.NameColor = n
-	user.FontFace = face
-	user.FontSize = size
-	user.FontColor = color
-
-	msg := NewMessage(user, _msg, time, puid, ip, channel)
-
-	r.Mgr.GroupMessage(user, r, msg)
-}
-
-func (r Room) Feed(food string) {
-	parts := strings.Split(food, ":")
-	cmd := "Rcmd_" + parts[0]
-	args := parts[1:]
-
-	switch cmd {
-		case "Rcmd_b":
-			r.Rcmd_b(args)
-		default :
-			//fmt.Printf("%s: %s \n", cmd, args)
-	}
-}
-
 type Chatango struct{
 	UserName string
 	Password string
@@ -448,15 +312,21 @@ func (c *Chatango) EasyStart(rooms []string, username string, password string) {
 
 		var activeConnections []string
 
-		// Perform the ping task
+		// Check and ping connected rooms
 		for _, room := range c.RoomList {
-			if room.Connected == true{
+			//log.Printf("Checking room: %s, connected: %v", room.Name, room.Connected)
+
+			if room.Connected {
 				room.Ping()
 				activeConnections = append(activeConnections, room.Name)
 			}
 		}
-		if c.EnablePM == true {
-			if c.PrivateMessage.Connected == true{
+
+		// Check and ping private message connection, if enabled
+		if c.EnablePM && c.PrivateMessage != nil {
+			//log.Printf("Checking PM: %s, connected: %v", c.PrivateMessage.Name, c.PrivateMessage.Connected)
+
+			if c.PrivateMessage.Connected {
 				c.PrivateMessage.Ping()
 				activeConnections = append(activeConnections, c.PrivateMessage.Name)
 			}
@@ -465,7 +335,9 @@ func (c *Chatango) EasyStart(rooms []string, username string, password string) {
 		if len(activeConnections) == 0 {
 			log.Println("No active connections left, stopping the ping loop.")
 			c.Running = false
-		}
+		} //else {
+			//log.Printf("Active connections: %v", activeConnections)
+		//}
 	}
 
 	return
