@@ -11,6 +11,7 @@ import (
 	//"regexp"
 	"strings"
 	"time"
+	"net"
 	"github.com/gorilla/websocket"
 )
 
@@ -129,10 +130,16 @@ func(p *PrivateMessage) Connect(){
 				p.Connected = false
 
 				if closeErr, ok := err.(*websocket.CloseError); ok {
+					log.Println("Code Error:", closeErr.Code)
 					if closeErr.Code == websocket.CloseAbnormalClosure { // code 1006
 						log.Println("Code 1006: Reconnecting...")
 						break
 					}
+				}
+
+				if opErr, ok := err.(*net.OpError); ok {
+					log.Println("Network-level error (OpError):", opErr)
+					break
 				}
 
 				p.Ws.Close()
