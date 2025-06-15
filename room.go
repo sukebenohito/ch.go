@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 	"strings"
+	"net"
 	"github.com/gorilla/websocket"
 )
 
@@ -94,10 +95,16 @@ func(r *Room) Connect(){
 				r.Connected = false
 
 				if closeErr, ok := err.(*websocket.CloseError); ok {
+					log.Println("Code Error:", closeErr.Code)
 					if closeErr.Code == websocket.CloseAbnormalClosure { // code 1006
 						log.Println("Code 1006: Reconnecting...")
 						break
 					}
+				}
+
+				if opErr, ok := err.(*net.OpError); ok {
+					log.Println("Network-level error (OpError):", opErr)
+					break
 				}
 
 				r.Ws.Close()
