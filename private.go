@@ -127,7 +127,6 @@ func(p *PrivateMessage) Connect(){
 			_, message, err := p.Ws.ReadMessage()
 			if err != nil {
 				log.Println("Error:", err)
-				p.Connected = false
 
 				if closeErr, ok := err.(*websocket.CloseError); ok {
 					log.Println("Code Error:", closeErr.Code)
@@ -138,10 +137,13 @@ func(p *PrivateMessage) Connect(){
 				}
 
 				if opErr, ok := err.(*net.OpError); ok {
-					log.Println("Network-level error (OpError):", opErr)
-					break
+					if p.Connected {
+						log.Println("Network-level error (OpError):", opErr)
+						break
+					}
 				}
 
+				p.Connected = false
 				p.Ws.Close()
 				return // <-- Exit if not code 1006
 			}
@@ -161,6 +163,7 @@ func (p *PrivateMessage) Ping(){
 }
 
 func (p *PrivateMessage) Disconnect(){
+	p.Connected = false
 	p.Ws.Close()
 }
 
