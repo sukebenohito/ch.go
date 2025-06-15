@@ -1,4 +1,7 @@
+//author agunq.e@gmail.com
+
 package main
+
 
 import (
 	//"fmt"
@@ -122,6 +125,7 @@ func(p *PrivateMessage) Connect(){
 		for {
 			_, message, err := p.Ws.ReadMessage()
 			if err != nil {
+				log.Println("Error:", err)
 				p.Connected = false
 
 				if closeErr, ok := err.(*websocket.CloseError); ok {
@@ -144,7 +148,9 @@ func(p *PrivateMessage) Connect(){
 }
 
 func (p *PrivateMessage) Ping(){
-	p.SendCommand("")
+	if p.Connected == true {
+		p.SendCommand("")
+	}
 }
 
 func (p *PrivateMessage) Disconnect(){
