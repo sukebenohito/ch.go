@@ -92,7 +92,6 @@ func(r *Room) Connect(){
 			_, message, err := r.Ws.ReadMessage()
 			if err != nil {
 				log.Println("Error:", err)
-				r.Connected = false
 
 				if closeErr, ok := err.(*websocket.CloseError); ok {
 					log.Println("Code Error:", closeErr.Code)
@@ -103,10 +102,13 @@ func(r *Room) Connect(){
 				}
 
 				if opErr, ok := err.(*net.OpError); ok {
-					log.Println("Network-level error (OpError):", opErr)
-					break
+					if r.Connected {
+						log.Println("Network-level error (OpError):", opErr)
+						break
+					}
 				}
 
+				r.Connected = false
 				r.Ws.Close()
 				return // <-- Exit if not code 1006
 			}
@@ -130,6 +132,7 @@ func (r *Room) Ping(){
 }
 
 func (r *Room) Disconnect(){
+	r.Connected = false
 	r.Ws.Close()
 }
 
